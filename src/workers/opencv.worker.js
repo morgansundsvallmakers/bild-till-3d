@@ -41,19 +41,44 @@ self.onmessage = event => {
     try {analyse(data);}catch(error){self.postMessage({type:'failure',id:data.id,message:String(error?.message||error)});}
   }
 };
-(async function boot(){
+// Registrera runtime-callback före importScripts. Vänta inte på ett
+// thenable cv-objekt: vissa officiella byggen kan fastna vid await cv.
+(function boot() {
+  let finished = false;
+  function tryReady(source) {
+    if (finished) return true;
+    const candidates = [self.cv, self.Module];
+    for (const candidate of candidates) {
+      if (candidate && typeof candidate.Mat === 'function' &&
+          typeof candidate.findContours === 'function') {
+        cvInstance = candidate;
+        finished = true;
+        status('OpenCV redo via ' + source);
+        self.postMessage({ type: 'ready' });
+        return true;
+      }
+    }
+    return false;
+  }
+  self.Module = {
+    onRuntimeInitialized() {
+      status('onRuntimeInitialized anropad: Module.Mat=' +
+        typeof self.Module?.Mat + ', cv.Mat=' + typeof self.cv?.Mat);
+      tryReady('onRuntimeInitialized');
+    }
+  };
   try {
-    status('Worker startad – hämtar OpenCV.js');
-    importScripts('https://docs.opencv.org/4.x/opencv.js');
-    status('OpenCV-skriptet hämtat. cv=' + typeof self.cv + ', then=' + typeof self.cv?.then);
-    let loaded=self.cv;
-    if(loaded && typeof loaded.then==='function') loaded=await loaded;
-    if(!loaded || typeof loaded.Mat!=='function' || typeof loaded.findContours!=='function')
-      throw new Error('OpenCV har inte tillgängliga bildbehandlingsfunktioner.');
-    cvInstance=loaded;
-    status('OpenCV redo i Worker');
-    self.postMessage({type:'ready'});
-  } catch(error) {
-    self.postMessage({type:'fatal',message:String(error?.message||error)});
+    status('Worker startad – hämtar OpenCV.js (4.13.0)');
+    importScripts('https://docs.opencv.org/4.13.0/opencv.js');
+    status('Skript hämtat: cv=' + typeof self.cv +
+      ', then=' + typeof self.cv?.then + ', Module.Mat=' + typeof self.Module?.Mat);
+    if (tryReady('skriptladdning')) return;
+    const polling = setInterval(() => {
+      if (finished) { clearInterval(polling); return; }
+      if (tryReady('runtime-kontroll')) clearInterval(polling);
+    }, 200);
+    setTimeout(() => clearInterval(polling), 29000);
+  } catch (error) {
+    self.postMessage({ type: 'fatal', message: String(error?.message || error) });
   }
 })();
