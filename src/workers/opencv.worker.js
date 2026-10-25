@@ -1,21 +1,23 @@
 /* Klassisk Worker: OpenCV:s distribuerade skript använder importScripts. */
 let cvInstance;
 function status(message) { self.postMessage({ type: 'status', message }); }
-function analyse({ id, pixels, width, height, threshold, invert, minArea }) {
+function analyse({ id, pixels, width, height, threshold, invert, minArea, smoothing = 'light' }) {
   const cv = cvInstance;
   const src = cv.matFromImageData(new ImageData(new Uint8ClampedArray(pixels), width, height));
-  const gray = new cv.Mat(), mask = new cv.Mat();
+  const gray = new cv.Mat(), filtered = new cv.Mat(), mask = new cv.Mat();
   const contours = new cv.MatVector(), hierarchy = new cv.Mat();
   try {
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-    cv.threshold(gray, mask, threshold, 255, invert ? cv.THRESH_BINARY_INV : cv.THRESH_BINARY);
+    if (smoothing === 'none') gray.copyTo(filtered);
+    else cv.GaussianBlur(gray, filtered, new cv.Size(smoothing === 'smooth' ? 7 : 3, smoothing === 'smooth' ? 7 : 3), 0);
+    cv.threshold(filtered, mask, threshold, 255, invert ? cv.THRESH_BINARY_INV : cv.THRESH_BINARY);
     cv.findContours(mask, contours, hierarchy, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE);
     const nodes = [];
     for (let i=0; i<contours.size();i++) {
       const contour = contours.get(i), approx = new cv.Mat();
       try {
         const area = Math.abs(cv.contourArea(contour));
-        cv.approxPolyDP(contour, approx, Math.max(0.7, cv.arcLength(contour,true)*0.002), true);
+        cv.approxPolyDP(contour, approx, Math.max(0.35, cv.arcLength(contour,true)*0.0007), true);
         const points=[];
         for(let j=0;j<approx.rows;j++) {
           const p=approx.intPtr(j,0);
@@ -32,7 +34,7 @@ function analyse({ id, pixels, width, height, threshold, invert, minArea }) {
         holes:nodes.filter(h=>h.parent===n.i && h.points.length>=3 && h.area>=minArea).map(h=>h.points)}))
       .sort((a,b)=>b.area-a.area).slice(0,30);
     self.postMessage({type:'result',id,candidates});
-  } finally {src.delete();gray.delete();mask.delete();contours.delete();hierarchy.delete();}
+  } finally {src.delete();gray.delete();filtered.delete();mask.delete();contours.delete();hierarchy.delete();}
 }
 self.onmessage = event => {
   const data=event.data;
