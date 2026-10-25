@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 
 export default function ContourEditor({ raster, candidates, chosen, onChoose, threshold, setThreshold,
-  invert, setInvert, minArea, setMinArea, showImage, setShowImage, svgMode }) {
+  invert, setInvert, minArea, setMinArea, smoothing, setSmoothing, showImage, setShowImage, svgMode }) {
   const [zoom, setZoom] = useState(1), [offset, setOffset] = useState({ x: 0, y: 0 });
   const pointer = useRef(null);
   const viewW = raster?.width || 900, viewH = raster?.height || 650;
@@ -14,6 +14,13 @@ export default function ContourEditor({ raster, candidates, chosen, onChoose, th
     {!svgMode && raster && <div className="controls">
       <label>Tröskelvärde <output>{threshold}</output><input type="range" min="0" max="255" value={threshold} onChange={e => setThreshold(Number(e.target.value))} /></label>
       <label>Minsta konturyta <output>{minArea} px²</output><input type="range" min="10" max="3000" step="10" value={minArea} onChange={e => setMinArea(Number(e.target.value))} /></label>
+      <label>Konturutjämning
+        <select value={smoothing} onChange={e => setSmoothing(e.target.value)}>
+          <option value="none">Ingen</option>
+          <option value="light">Lätt</option>
+          <option value="smooth">Jämn</option>
+        </select>
+      </label>
       <label className="check"><input type="checkbox" checked={invert} onChange={e => setInvert(e.target.checked)} /> Invertera svart/vitt</label>
       <label className="check"><input type="checkbox" checked={showImage} onChange={e => setShowImage(e.target.checked)} /> Visa originalbild</label>
     </div>}
