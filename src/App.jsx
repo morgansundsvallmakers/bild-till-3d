@@ -5,7 +5,7 @@ import Calibration from './components/Calibration.jsx';
 import ModelViewer from './components/ModelViewer.jsx';
 import ExportPanel from './components/ExportPanel.jsx';
 import { readRaster } from './utils/imageProcessing.js';
-import { startAnalysis, findContoursAsync, stopAnalysis } from './utils/workerAnalysis.js';
+import { startAnalysis, findContoursAsync } from './utils/workerAnalysis.js';
 import { importSVG } from './utils/svgImport.js';
 import { createGeometry } from './utils/geometry.js';
 
@@ -15,15 +15,12 @@ export default function App() {
   const [raster,setRaster]=useState(null), [svgMode,setSvgMode]=useState(false), [svgCandidates,setSvgCandidates]=useState([]);
   const [candidates,setCandidates]=useState([]), [chosen,setChosen]=useState(0);
   const [threshold,setThreshold]=useState(130),[invert,setInvert]=useState(true),[minArea,setMinArea]=useState(80);
-  const [smoothing,setSmoothing]=useState('light'), [showImage,setShowImage]=useState(true), [scale,setScale]=useState(1), [thickness,setThickness]=useState(5);
+  const [showImage,setShowImage]=useState(true), [scale,setScale]=useState(1), [thickness,setThickness]=useState(5);
   const [analysisReady,setAnalysisReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
-  const [diagnostics,setDiagnostics]=useState([]);
-  const logStatus = message => setDiagnostics(lines => [...lines.slice(-19), message]);
   useEffect(() => {
     if (svgMode || !raster || analysisReady) return;
     let live = true;
-    setDiagnostics(['Förbereder analys i separat Worker']);
-    startAnalysis(message => { if (live) logStatus(message); })
+    startAnalysis()
       .then(() => { if (live) { setAnalysisReady(true); setError(''); } })
       .catch(err => { if (live) setError('Bildanalys: ' + (err.message || String(err))); });
     return () => { live = false; };
@@ -48,7 +45,7 @@ export default function App() {
     if (svgMode) { setCandidates(svgCandidates); return; }
     if (!raster || !analysisReady) return;
     let active=true;
-    findContoursAsync(raster.canvas,threshold,invert,minArea,smoothing)
+    findContoursAsync(raster.canvas,threshold,invert,minArea)
       .then(found => {
         if (!active) return;
         setCandidates(found);
@@ -57,7 +54,7 @@ export default function App() {
       })
       .catch(err => { if(active)setError('Bildanalysen misslyckades: '+err.message); });
     return ()=>{active=false;};
-  },[raster,svgMode,svgCandidates,analysisReady,threshold,invert,minArea,smoothing]);
+  },[raster,svgMode,svgCandidates,analysisReady,threshold,invert,minArea]);
   const candidate=candidates[chosen]||null;
   const geometry=useMemo(()=>{if(!candidate)return null;try{return createGeometry(candidate,scale,thickness);}catch{return null;}},[candidate,scale,thickness]);
   useEffect(()=>()=>{geometry?.dispose();},[geometry]);
@@ -67,11 +64,10 @@ export default function App() {
     <nav className="steps" aria-label="Arbetssteg">{STEPS.map((name,i)=><button key={name} className={step===i?'active':''} onClick={()=>setStep(i)} disabled={i>0&&!fileName}>{i+1}. {name}</button>)}</nav>
     {fileName&&<div className="filebar">Fil: <strong>{fileName}</strong> <button onClick={()=>setStep(0)}>Byt bild</button></div>}
     {error&&<div className="notice" role="status">{error}</div>}
-    {raster && !svgMode && <details className="panel" open={!analysisReady}><summary>Diagnostik för konturanalys {analysisReady ? '(redo)' : '(pågår)'}</summary><ol aria-live="polite">{diagnostics.map((line,i)=><li key={i}>{line}</li>)}</ol></details>}
     {step===0&&<ImageUpload onFile={importFile} busy={busy}/>}
     {step===1&&<ContourEditor raster={raster} candidates={candidates} chosen={chosen} onChoose={setChosen}
       threshold={threshold} setThreshold={setThreshold} invert={invert} setInvert={setInvert}
-      minArea={minArea} setMinArea={setMinArea} smoothing={smoothing} setSmoothing={setSmoothing} showImage={showImage} setShowImage={setShowImage} svgMode={svgMode}/>}
+      minArea={minArea} setMinArea={setMinArea} showImage={showImage} setShowImage={setShowImage} svgMode={svgMode}/>}
     {step===2&&<Calibration candidate={candidate} scale={scale} setScale={setScale}/>}
     {step===3&&<><section className="panel"><h2>Modellens tjocklek</h2>
       <label className="inline-label">Tjocklek i mm <input type="number" min="0.01" step="0.5" value={thickness} onChange={e=>setThickness(Number(e.target.value))}/></label></section>
