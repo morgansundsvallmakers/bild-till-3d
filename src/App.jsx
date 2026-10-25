@@ -15,7 +15,7 @@ export default function App() {
   const [raster,setRaster]=useState(null), [svgMode,setSvgMode]=useState(false), [svgCandidates,setSvgCandidates]=useState([]);
   const [candidates,setCandidates]=useState([]), [chosen,setChosen]=useState(0);
   const [threshold,setThreshold]=useState(130),[invert,setInvert]=useState(true),[minArea,setMinArea]=useState(80);
-  const [showImage,setShowImage]=useState(true), [scale,setScale]=useState(1), [thickness,setThickness]=useState(5);
+  const [smoothing,setSmoothing]=useState('light'), [showImage,setShowImage]=useState(true), [scale,setScale]=useState(1), [thickness,setThickness]=useState(5);
   const [analysisReady,setAnalysisReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [diagnostics,setDiagnostics]=useState([]);
   const logStatus = message => setDiagnostics(lines => [...lines.slice(-19), message]);
@@ -48,7 +48,7 @@ export default function App() {
     if (svgMode) { setCandidates(svgCandidates); return; }
     if (!raster || !analysisReady) return;
     let active=true;
-    findContoursAsync(raster.canvas,threshold,invert,minArea)
+    findContoursAsync(raster.canvas,threshold,invert,minArea,smoothing)
       .then(found => {
         if (!active) return;
         setCandidates(found);
@@ -57,7 +57,7 @@ export default function App() {
       })
       .catch(err => { if(active)setError('Bildanalysen misslyckades: '+err.message); });
     return ()=>{active=false;};
-  },[raster,svgMode,svgCandidates,analysisReady,threshold,invert,minArea]);
+  },[raster,svgMode,svgCandidates,analysisReady,threshold,invert,minArea,smoothing]);
   const candidate=candidates[chosen]||null;
   const geometry=useMemo(()=>{if(!candidate)return null;try{return createGeometry(candidate,scale,thickness);}catch{return null;}},[candidate,scale,thickness]);
   useEffect(()=>()=>{geometry?.dispose();},[geometry]);
@@ -71,7 +71,7 @@ export default function App() {
     {step===0&&<ImageUpload onFile={importFile} busy={busy}/>}
     {step===1&&<ContourEditor raster={raster} candidates={candidates} chosen={chosen} onChoose={setChosen}
       threshold={threshold} setThreshold={setThreshold} invert={invert} setInvert={setInvert}
-      minArea={minArea} setMinArea={setMinArea} showImage={showImage} setShowImage={setShowImage} svgMode={svgMode}/>}
+      minArea={minArea} setMinArea={setMinArea} smoothing={smoothing} setSmoothing={setSmoothing} showImage={showImage} setShowImage={setShowImage} svgMode={svgMode}/>}
     {step===2&&<Calibration candidate={candidate} scale={scale} setScale={setScale}/>}
     {step===3&&<><section className="panel"><h2>Modellens tjocklek</h2>
       <label className="inline-label">Tjocklek i mm <input type="number" min="0.01" step="0.5" value={thickness} onChange={e=>setThickness(Number(e.target.value))}/></label></section>
