@@ -14,7 +14,7 @@ export default function App() {
   const [step,setStep] = useState(0), [fileName,setFileName]=useState('');
   const [raster,setRaster]=useState(null), [svgMode,setSvgMode]=useState(false), [svgCandidates,setSvgCandidates]=useState([]);
   const [candidates,setCandidates]=useState([]), [chosen,setChosen]=useState(0);
-  const [threshold,setThreshold]=useState(130),[invert,setInvert]=useState(true),[minArea,setMinArea]=useState(80);
+  const [threshold,setThreshold]=useState(130),[minArea,setMinArea]=useState(80);
   const [showImage,setShowImage]=useState(true), [scale,setScale]=useState(1), [thickness,setThickness]=useState(5);
   const [analysisReady,setAnalysisReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
   useEffect(() => {
@@ -45,16 +45,16 @@ export default function App() {
     if (svgMode) { setCandidates(svgCandidates); return; }
     if (!raster || !analysisReady) return;
     let active=true;
-    findContoursAsync(raster.canvas,threshold,invert,minArea)
+    findContoursAsync(raster.canvas,threshold,minArea)
       .then(found => {
         if (!active) return;
         setCandidates(found);
         setChosen(0);
-        setError(found.length ? '' : 'Inga konturer hittades. Prova ett annat tröskelvärde eller invertering.');
+        setError(found.length ? '' : 'Inga konturer hittades. Prova ett annat tröskelvärde.');
       })
       .catch(err => { if(active)setError('Bildanalysen misslyckades: '+err.message); });
     return ()=>{active=false;};
-  },[raster,svgMode,svgCandidates,analysisReady,threshold,invert,minArea]);
+  },[raster,svgMode,svgCandidates,analysisReady,threshold,minArea]);
   const candidate=candidates[chosen]||null;
   const geometry=useMemo(()=>{if(!candidate)return null;try{return createGeometry(candidate,scale,thickness);}catch{return null;}},[candidate,scale,thickness]);
   useEffect(()=>()=>{geometry?.dispose();},[geometry]);
@@ -66,7 +66,7 @@ export default function App() {
     {error&&<div className="notice" role="status">{error}</div>}
     {step===0&&<ImageUpload onFile={importFile} busy={busy}/>}
     {step===1&&<ContourEditor raster={raster} candidates={candidates} chosen={chosen} onChoose={setChosen}
-      threshold={threshold} setThreshold={setThreshold} invert={invert} setInvert={setInvert}
+      threshold={threshold} setThreshold={setThreshold}
       minArea={minArea} setMinArea={setMinArea} showImage={showImage} setShowImage={setShowImage} svgMode={svgMode}/>}
     {step===2&&<Calibration candidate={candidate} scale={scale} setScale={setScale}/>}
     {step===3&&<><section className="panel"><h2>Modellens tjocklek</h2>
