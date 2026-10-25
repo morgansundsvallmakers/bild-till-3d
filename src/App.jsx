@@ -25,7 +25,7 @@ export default function App() {
     setDiagnostics(['Förbereder analys i separat Worker']);
     startAnalysis(message => { if (live) logStatus(message); })
       .then(() => { if (live) { setAnalysisReady(true); setError(''); } })
-      .catch(err => { if (live) setError('OpenCV: ' + (err.message || String(err))); });
+      .catch(err => { if (live) setError('Bildanalys: ' + (err.message || String(err))); });
     return () => { live = false; };
   }, [raster, svgMode, analysisReady]);
   async function importFile(file) {
@@ -63,11 +63,11 @@ export default function App() {
   useEffect(()=>()=>{geometry?.dispose();},[geometry]);
   return <div className="app">
     <header><div><p className="eyebrow">MAKERSPACE · 2,5D</p><h1>Bild till 3D</h1><p>Från bild till utskrivbar modell – direkt i webbläsaren.</p></div>
-    <div className="status">{analysisReady ? 'Bildanalys redo' : raster && !svgMode ? 'Laddar OpenCV …' : 'Redo för import'}</div></header>
+    <div className="status">{analysisReady ? 'Bildanalys redo' : raster && !svgMode ? 'Startar konturanalys …' : 'Redo för import'}</div></header>
     <nav className="steps" aria-label="Arbetssteg">{STEPS.map((name,i)=><button key={name} className={step===i?'active':''} onClick={()=>setStep(i)} disabled={i>0&&!fileName}>{i+1}. {name}</button>)}</nav>
     {fileName&&<div className="filebar">Fil: <strong>{fileName}</strong> <button onClick={()=>setStep(0)}>Byt bild</button></div>}
     {error&&<div className="notice" role="status">{error}</div>}
-    {raster && !svgMode && <details className="panel" open={!analysisReady}><summary>Diagnostik för OpenCV {analysisReady ? '(redo)' : '(pågår)'}</summary><ol aria-live="polite">{diagnostics.map((line,i)=><li key={i}>{line}</li>)}</ol></details>}
+    {raster && !svgMode && <details className="panel" open={!analysisReady}><summary>Diagnostik för konturanalys {analysisReady ? '(redo)' : '(pågår)'}</summary><ol aria-live="polite">{diagnostics.map((line,i)=><li key={i}>{line}</li>)}</ol></details>}
     {step===0&&<ImageUpload onFile={importFile} busy={busy}/>}
     {step===1&&<ContourEditor raster={raster} candidates={candidates} chosen={chosen} onChoose={setChosen}
       threshold={threshold} setThreshold={setThreshold} invert={invert} setInvert={setInvert}
@@ -79,6 +79,6 @@ export default function App() {
     {fileName&&<footer className="row navfoot"><button disabled={step===0} onClick={()=>setStep(s=>Math.max(0,s-1))}>Föregående</button>
       {step<3?<button className="primary" onClick={()=>setStep(s=>Math.min(3,s+1))}>Nästa: {STEPS[step+1]}</button>:
       <span className="hint">Kontrollera alltid storleken i din slicer.</span>}</footer>}
-    <p className="footer-note">Prototyp: enkla plana föremål och slutna konturer. Filerna bearbetas lokalt, men OpenCV-biblioteket hämtas från internet.</p>
+    <p className="footer-note">Prototyp: enkla plana föremål och slutna konturer. Filerna bearbetas lokalt i webbläsaren.</p>
   </div>;
 }
