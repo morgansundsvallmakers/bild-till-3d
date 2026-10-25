@@ -1,27 +1,52 @@
-// OpenCV laddas endast om en rasterbild väljs.
+// Ladda OpenCV först när en rasterbild ska analyseras.
 let cvLoadPromise;
 export function loadOpenCV() {
   if (cvLoadPromise) return cvLoadPromise;
   cvLoadPromise = new Promise((resolve, reject) => {
+    let settled = false;
     const script = document.createElement('script');
-    script.src = 'https://docs.opencv.org/4.x/opencv.js';
-    script.async = true;
-    const timeout = setTimeout(() => reject(new Error('OpenCV svarade inte inom 30 sekunder.')), 30000);
-    script.onerror = () => { clearTimeout(timeout); reject(new Error('OpenCV kunde inte hämtas.')); };
-    script.onload = async () => {
-      try {
-        let cv = window.cv;
-        if (cv && typeof cv.then === 'function') {
-          cv = await Promise.race([
-            cv,
-            new Promise((_, rej) => setTimeout(() => rej(new Error('OpenCV kunde inte starta.')), 20000))
-          ]);
-        }
-        if (!cv || typeof cv.Mat !== 'function') throw new Error('OpenCV saknar förväntade funktioner.');
-        clearTimeout(timeout);
-        resolve(cv);
-      } catch (err) { clearTimeout(timeout); reject(err); }
+    const timer = setTimeout(() => finish(new Error('OpenCV kunde inte initieras inom 30 sekunder.')), 30000);
+    function finish(err, cv) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (err) reject(err);
+      else resolve(cv);
+    }
+    function ready(cv) {
+      if (cv && typeof cv.Mat === 'function' && typeof cv.findContours === 'function') {
+        finish(null, cv);
+        return true;
+      }
+      return false;
+    }
+    // OpenCV kan exponeras som ett färdigt objekt, en Promise eller
+    // ett Emscripten-objekt med onRuntimeInitialized.
+    script.onload = () => {
+      const cv = window.cv;
+      if (ready(cv)) return;
+      if (cv && typeof cv.then === 'function') {
+        cv.then(result => { if (!ready(result)) finish(new Error('OpenCV saknar nödvändiga funktioner.')); })
+          .catch(err => finish(err));
+      } else if (cv) {
+        const prior = cv.onRuntimeInitialized;
+        cv.onRuntimeInitialized = () => {
+          if (typeof prior === 'function') prior();
+          ready(window.cv);
+        };
+        // För kompatibilitet med äldre OpenCV.js, där initieringen kan
+        // ske strax efter att skriptets onload har avfyrats.
+        const check = setInterval(() => {
+          if (settled || ready(window.cv)) clearInterval(check);
+        }, 100);
+        setTimeout(() => clearInterval(check), 30000);
+      } else {
+        finish(new Error('OpenCV-skriptet laddades men skapade inget cv-objekt.'));
+      }
     };
+    script.onerror = () => finish(new Error('OpenCV-filen kunde inte hämtas från servern.'));
+    script.async = true;
+    script.src = 'https://docs.opencv.org/4.x/opencv.js';
     document.head.appendChild(script);
   }).catch(err => { cvLoadPromise = null; throw err; });
   return cvLoadPromise;
