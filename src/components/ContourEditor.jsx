@@ -13,7 +13,7 @@ export default function ContourEditor({ raster, candidates, chosen, onChoose, th
     <h2>2. Konturer</h2>
     {!svgMode && raster && <div className="controls">
       <label>Tröskelvärde <output>{threshold}</output><input type="range" min="0" max="255" value={threshold} onChange={e => setThreshold(Number(e.target.value))} /></label>
-      <label>Minsta konturyta <output>{minArea} px²</output><input type="range" min="10" max="3000" step="10" value={minArea} onChange={e => setMinArea(Number(e.target.value))} /></label>
+      <label>Minsta detalj <output>{minArea} px²</output><input type="range" min="10" max="3000" step="10" value={minArea} onChange={e => setMinArea(Number(e.target.value))} /></label>
       <label className="check"><input type="checkbox" checked={invert} onChange={e => setInvert(e.target.checked)} /> Invertera svart/vitt</label>
       <label className="check"><input type="checkbox" checked={showImage} onChange={e => setShowImage(e.target.checked)} /> Visa originalbild</label>
     </div>}
