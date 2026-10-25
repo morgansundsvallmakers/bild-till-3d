@@ -22,8 +22,11 @@ jobs:
         with:
           node-version: '22'
       - run: npm install
-      - name: Emit package lock for one-time capture
-        run: echo "LOCKFILE_BASE64=$(base64 -w0 package-lock.json)"
+      - name: Upload package lock for one-time capture
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-lock
+          path: package-lock.json
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
