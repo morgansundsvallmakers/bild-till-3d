@@ -1,50 +1,63 @@
-// Ladda OpenCV först när en rasterbild ska analyseras.
+// OpenCV hämtas på begäran. Status skickas till gränssnittet för felsökning.
 let cvLoadPromise;
-export function loadOpenCV() {
+let listeners = new Set();
+function report(message) {
+  for (const listener of listeners) listener(message);
+}
+export function loadOpenCV(onStatus = () => {}) {
+  listeners.add(onStatus);
   if (cvLoadPromise) return cvLoadPromise;
+  report('Startar hämtning av OpenCV.js');
   cvLoadPromise = new Promise((resolve, reject) => {
-    let settled = false;
+    let finished = false;
     const script = document.createElement('script');
-    const timer = setTimeout(() => finish(new Error('OpenCV kunde inte initieras inom 30 sekunder.')), 30000);
-    function finish(err, cv) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (err) reject(err);
-      else resolve(cv);
-    }
-    function ready(cv) {
+    const started = Date.now();
+    const timer = setTimeout(() => {
+      const cv = window.cv;
+      finish(new Error('Tidsgräns efter 30 s. window.cv: ' + typeof cv +
+        ', Mat: ' + typeof cv?.Mat + ', then: ' + typeof cv?.then));
+    }, 30000);
+    const check = setInterval(() => {
+      if (finished) return;
+      const cv = window.cv;
       if (cv && typeof cv.Mat === 'function' && typeof cv.findContours === 'function') {
         finish(null, cv);
-        return true;
       }
-      return false;
+    }, 250);
+    function finish(error, cv) {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      clearInterval(check);
+      window.removeEventListener('error', onError, true);
+      if (error) {
+        report('Fel: ' + (error.message || String(error)));
+        reject(error);
+      } else {
+        report('OpenCV är redo (' + ((Date.now() - started) / 1000).toFixed(1) + ' s)');
+        resolve(cv);
+      }
     }
-    // OpenCV kan exponeras som ett färdigt objekt, en Promise eller
-    // ett Emscripten-objekt med onRuntimeInitialized.
+    function onError(event) {
+      const message = event.message || event.error?.message || String(event.error || 'Okänt skriptfel');
+      report('JavaScript-fel: ' + message);
+    }
+    window.addEventListener('error', onError, true);
+    script.onerror = () => finish(new Error('Nedladdning av opencv.js misslyckades'));
     script.onload = () => {
       const cv = window.cv;
-      if (ready(cv)) return;
+      report('Skript hämtat. cv=' + typeof cv + ', Mat=' + typeof cv?.Mat +
+        ', then=' + typeof cv?.then);
       if (cv && typeof cv.then === 'function') {
-        cv.then(result => { if (!ready(result)) finish(new Error('OpenCV saknar nödvändiga funktioner.')); })
-          .catch(err => finish(err));
-      } else if (cv) {
-        const prior = cv.onRuntimeInitialized;
-        cv.onRuntimeInitialized = () => {
-          if (typeof prior === 'function') prior();
-          ready(window.cv);
-        };
-        // För kompatibilitet med äldre OpenCV.js, där initieringen kan
-        // ske strax efter att skriptets onload har avfyrats.
-        const check = setInterval(() => {
-          if (settled || ready(window.cv)) clearInterval(check);
-        }, 100);
-        setTimeout(() => clearInterval(check), 30000);
-      } else {
-        finish(new Error('OpenCV-skriptet laddades men skapade inget cv-objekt.'));
+        Promise.resolve(cv).then(result => {
+          report('OpenCV-Promise klar. Mat=' + typeof result?.Mat);
+          if (result && typeof result.Mat === 'function') finish(null, result);
+        }).catch(err => finish(new Error('OpenCV-Promise: ' + String(err))));
+      } else if (cv && typeof cv.Mat === 'function') {
+        finish(null, cv);
       }
+      // Äldre versioner kan bli färdiga via runtime efter onload.
     };
-    script.onerror = () => finish(new Error('OpenCV-filen kunde inte hämtas från servern.'));
     script.async = true;
     script.src = 'https://docs.opencv.org/4.x/opencv.js';
     document.head.appendChild(script);
