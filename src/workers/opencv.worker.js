@@ -1,86 +1,180 @@
-/* Klassisk Worker: OpenCV:s distribuerade skript använder importScripts. */
-let cvInstance;
+/* Marching Squares med linjär interpolation.
+   Ingen Gaussian blur och inget OpenCV krävs för konturextraktionen. */
 function status(message) { self.postMessage({ type: 'status', message }); }
-function analyse({ id, pixels, width, height, threshold, invert, minArea, smoothing = 'light' }) {
-  const cv = cvInstance;
-  const src = cv.matFromImageData(new ImageData(new Uint8ClampedArray(pixels), width, height));
-  const gray = new cv.Mat(), filtered = new cv.Mat(), mask = new cv.Mat();
-  const contours = new cv.MatVector(), hierarchy = new cv.Mat();
-  try {
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-    if (smoothing === 'none') gray.copyTo(filtered);
-    else cv.GaussianBlur(gray, filtered, new cv.Size(smoothing === 'smooth' ? 7 : 3, smoothing === 'smooth' ? 7 : 3), 0);
-    cv.threshold(filtered, mask, threshold, 255, invert ? cv.THRESH_BINARY_INV : cv.THRESH_BINARY);
-    cv.findContours(mask, contours, hierarchy, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE);
-    const nodes = [];
-    for (let i=0; i<contours.size();i++) {
-      const contour = contours.get(i), approx = new cv.Mat();
-      try {
-        const area = Math.abs(cv.contourArea(contour));
-        cv.approxPolyDP(contour, approx, Math.max(0.35, cv.arcLength(contour,true)*0.0007), true);
-        const points=[];
-        for(let j=0;j<approx.rows;j++) {
-          const p=approx.intPtr(j,0);
-          points.push({x:p[0],y:p[1]});
-        }
-        nodes.push({i, parent:hierarchy.intPtr(0,i)[3],points,area});
-      } finally {contour.delete();approx.delete();}
-    }
-    const byId = new Map(nodes.map(n=>[n.i,n]));
-    const candidates=nodes.filter(n=>n.points.length>=3 && n.area>=minArea &&
-      n.area<width*height*0.97 &&
-      (n.parent===-1 || !byId.has(n.parent) || byId.get(n.parent).area>width*height*0.97))
-      .map(n=>({id:n.i,points:n.points,area:n.area,
-        holes:nodes.filter(h=>h.parent===n.i && h.points.length>=3 && h.area>=minArea).map(h=>h.points)}))
-      .sort((a,b)=>b.area-a.area).slice(0,30);
-    self.postMessage({type:'result',id,candidates});
-  } finally {src.delete();gray.delete();filtered.delete();mask.delete();contours.delete();hierarchy.delete();}
+
+function grayAt(data, width, x, y) {
+  const i = (y * width + x) * 4;
+  return 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
 }
-self.onmessage = event => {
-  const data=event.data;
-  if(data.type==='analyze') {
-    if(!cvInstance){self.postMessage({type:'failure',id:data.id,message:'OpenCV är inte redo.'});return;}
-    try {analyse(data);}catch(error){self.postMessage({type:'failure',id:data.id,message:String(error?.message||error)});}
+function interp(a, b, va, vb, t) {
+  const d = vb - va;
+  const u = Math.abs(d) < 1e-9 ? 0.5 : Math.max(0, Math.min(1, (t - va) / d));
+  return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+}
+function key(p) { return Math.round(p.x * 10000) + ':' + Math.round(p.y * 10000); }
+function area(poly) {
+  let s = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    s += a.x * b.y - b.x * a.y;
   }
-};
-// Registrera runtime-callback före importScripts. Vänta inte på ett
-// thenable cv-objekt: vissa officiella byggen kan fastna vid await cv.
-(function boot() {
-  let finished = false;
-  function tryReady(source) {
-    if (finished) return true;
-    const candidates = [self.cv, self.Module];
-    for (const candidate of candidates) {
-      if (candidate && typeof candidate.Mat === 'function' &&
-          typeof candidate.findContours === 'function') {
-        cvInstance = candidate;
-        finished = true;
-        status('OpenCV redo via ' + source);
-        self.postMessage({ type: 'ready' });
-        return true;
+  return s / 2;
+}
+function pointInPolygon(p, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > p.y) !== (b.y > p.y) &&
+      p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+function distanceToSegment(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const l2 = dx * dx + dy * dy;
+  if (!l2) return Math.hypot(p.x - a.x, p.y - a.y);
+  let u = ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2;
+  u = Math.max(0, Math.min(1, u));
+  return Math.hypot(p.x - (a.x + u * dx), p.y - (a.y + u * dy));
+}
+function rdp(points, epsilon) {
+  if (epsilon <= 0 || points.length < 4) return points;
+  const open = [...points, points[0]];
+  function rec(list) {
+    if (list.length <= 2) return list;
+    let max = -1, idx = -1;
+    for (let i = 1; i < list.length - 1; i++) {
+      const d = distanceToSegment(list[i], list[0], list[list.length - 1]);
+      if (d > max) { max = d; idx = i; }
+    }
+    if (max > epsilon) {
+      const left = rec(list.slice(0, idx + 1));
+      const right = rec(list.slice(idx));
+      return [...left.slice(0, -1), ...right];
+    }
+    return [list[0], list[list.length - 1]];
+  }
+  const out = rec(open);
+  out.pop();
+  return out.length >= 3 ? out : points;
+}
+function stitch(segments) {
+  const adjacency = new Map();
+  const pointByKey = new Map();
+  function add(a, b) {
+    const ka = key(a), kb = key(b);
+    pointByKey.set(ka, a); pointByKey.set(kb, b);
+    if (!adjacency.has(ka)) adjacency.set(ka, []);
+    if (!adjacency.has(kb)) adjacency.set(kb, []);
+    adjacency.get(ka).push(kb); adjacency.get(kb).push(ka);
+  }
+  for (const [a,b] of segments) add(a,b);
+
+  const used = new Set(), loops = [];
+  const edgeKey = (a,b) => a < b ? a + '|' + b : b + '|' + a;
+  for (const [start, neighbours] of adjacency) {
+    for (const first of neighbours) {
+      if (used.has(edgeKey(start, first))) continue;
+      const loop = [pointByKey.get(start)];
+      let prev = start, cur = first;
+      used.add(edgeKey(prev, cur));
+      let guard = 0;
+      while (guard++ < segments.length * 2) {
+        loop.push(pointByKey.get(cur));
+        if (cur === start) break;
+        const nexts = adjacency.get(cur) || [];
+        const next = nexts.find(n => n !== prev && !used.has(edgeKey(cur,n))) ??
+                     nexts.find(n => n === start);
+        if (!next) break;
+        prev = cur; cur = next;
+        used.add(edgeKey(prev, cur));
+      }
+      if (loop.length >= 4 && key(loop[0]) === key(loop[loop.length - 1])) {
+        loop.pop();
+        loops.push(loop);
       }
     }
-    return false;
   }
-  self.Module = {
-    onRuntimeInitialized() {
-      status('onRuntimeInitialized anropad: Module.Mat=' +
-        typeof self.Module?.Mat + ', cv.Mat=' + typeof self.cv?.Mat);
-      tryReady('onRuntimeInitialized');
+  return loops;
+}
+
+function marchingSquares(data, width, height, threshold, invert) {
+  const segments = [];
+  const inside = v => invert ? v < threshold : v >= threshold;
+  for (let y = 0; y < height - 1; y++) {
+    for (let x = 0; x < width - 1; x++) {
+      const v0 = grayAt(data,width,x,y);
+      const v1 = grayAt(data,width,x+1,y);
+      const v2 = grayAt(data,width,x+1,y+1);
+      const v3 = grayAt(data,width,x,y+1);
+      const b0=inside(v0)?1:0,b1=inside(v1)?1:0,b2=inside(v2)?1:0,b3=inside(v3)?1:0;
+      const code = b0 | (b1<<1) | (b2<<2) | (b3<<3);
+      if (code===0 || code===15) continue;
+      const p0={x,y}, p1={x:x+1,y}, p2={x:x+1,y:y+1}, p3={x,y:y+1};
+      const e0=()=>interp(p0,p1,v0,v1,threshold);
+      const e1=()=>interp(p1,p2,v1,v2,threshold);
+      const e2=()=>interp(p3,p2,v3,v2,threshold);
+      const e3=()=>interp(p0,p3,v0,v3,threshold);
+      const pair=(a,b)=>segments.push([a(),b()]);
+      switch(code){
+        case 1: pair(e3,e0); break;
+        case 2: pair(e0,e1); break;
+        case 3: pair(e3,e1); break;
+        case 4: pair(e1,e2); break;
+        case 5: {
+          const center=(v0+v1+v2+v3)/4, c=inside(center);
+          if (c) { pair(e0,e1); pair(e2,e3); } else { pair(e3,e0); pair(e1,e2); }
+          break;
+        }
+        case 6: pair(e0,e2); break;
+        case 7: pair(e3,e2); break;
+        case 8: pair(e2,e3); break;
+        case 9: pair(e2,e0); break;
+        case 10: {
+          const center=(v0+v1+v2+v3)/4, c=inside(center);
+          if (c) { pair(e3,e0); pair(e1,e2); } else { pair(e0,e1); pair(e2,e3); }
+          break;
+        }
+        case 11: pair(e2,e1); break;
+        case 12: pair(e1,e3); break;
+        case 13: pair(e1,e0); break;
+        case 14: pair(e0,e3); break;
+      }
     }
-  };
-  try {
-    status('Worker startad – hämtar OpenCV.js (4.13.0)');
-    importScripts('https://docs.opencv.org/4.13.0/opencv.js');
-    status('Skript hämtat: cv=' + typeof self.cv +
-      ', then=' + typeof self.cv?.then + ', Module.Mat=' + typeof self.Module?.Mat);
-    if (tryReady('skriptladdning')) return;
-    const polling = setInterval(() => {
-      if (finished) { clearInterval(polling); return; }
-      if (tryReady('runtime-kontroll')) clearInterval(polling);
-    }, 200);
-    setTimeout(() => clearInterval(polling), 29000);
-  } catch (error) {
-    self.postMessage({ type: 'fatal', message: String(error?.message || error) });
   }
-})();
+  return stitch(segments);
+}
+function buildCandidates(loops, minArea, smoothing) {
+  const epsilon = smoothing === 'smooth' ? 0.7 : smoothing === 'light' ? 0.25 : 0;
+  const items = loops.map((points,id) => {
+    const simplified = rdp(points, epsilon);
+    return { id, points: simplified, area: Math.abs(area(simplified)) };
+  }).filter(x => x.points.length >= 3 && x.area >= minArea)
+    .sort((a,b)=>b.area-a.area);
+
+  for (const item of items) {
+    item.depth = items.filter(other => other.area > item.area && pointInPolygon(item.points[0], other.points)).length;
+  }
+  const outers = items.filter(x => x.depth % 2 === 0);
+  for (const outer of outers) {
+    const holes = items.filter(h => h.depth === outer.depth + 1 &&
+      h.area < outer.area && pointInPolygon(h.points[0], outer.points));
+    outer.holes = holes.map(h => h.points);
+  }
+  return outers.map(({id,points,area,holes})=>({id,points,area,holes})).slice(0,30);
+}
+function analyse({ id, pixels, width, height, threshold, invert, minArea, smoothing='light' }) {
+  const data = new Uint8ClampedArray(pixels);
+  const loops = marchingSquares(data,width,height,threshold,invert);
+  const candidates = buildCandidates(loops,minArea,smoothing);
+  self.postMessage({ type:'result', id, candidates });
+}
+self.onmessage = event => {
+  const data = event.data;
+  if (data.type === 'analyze') {
+    try { analyse(data); }
+    catch (error) { self.postMessage({ type:'failure', id:data.id, message:String(error?.message||error) }); }
+  }
+};
+status('Worker startad – Marching Squares redo');
+self.postMessage({ type:'ready' });
