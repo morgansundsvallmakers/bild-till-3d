@@ -59,8 +59,7 @@ export default function App() {
   const geometry=useMemo(()=>{if(!candidate)return null;try{return createGeometry(candidate,scale,thickness);}catch{return null;}},[candidate,scale,thickness]);
   useEffect(()=>()=>{geometry?.dispose();},[geometry]);
   return <div className="app">
-    <header><div><p className="eyebrow">MAKERSPACE · 2,5D</p><h1>Bild till 3D</h1><p>Från bild till utskrivbar modell – direkt i webbläsaren.</p></div>
-    <div className="status">{analysisReady ? 'Bildanalys redo' : raster && !svgMode ? 'Startar konturanalys …' : 'Redo för import'}</div></header>
+    <header><div><p className="eyebrow">MAKERSPACE · 2,5D</p><h1>Bild till 3D</h1><p>Från bild till utskrivbar modell – direkt i webbläsaren.</p></div></header>
     <nav className="steps" aria-label="Arbetssteg">{STEPS.map((name,i)=><button key={name} className={step===i?'active':''} onClick={()=>setStep(i)} disabled={i>0&&!fileName}>{i+1}. {name}</button>)}</nav>
     {fileName&&<div className="filebar">Fil: <strong>{fileName}</strong> <button onClick={()=>setStep(0)}>Byt bild</button></div>}
     {error&&<div className="notice" role="status">{error}</div>}
