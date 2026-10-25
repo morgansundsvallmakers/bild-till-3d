@@ -4,7 +4,7 @@ import ContourEditor from './components/ContourEditor.jsx';
 import Calibration from './components/Calibration.jsx';
 import ModelViewer from './components/ModelViewer.jsx';
 import ExportPanel from './components/ExportPanel.jsx';
-import { waitForOpenCV, readRaster, detectContours } from './utils/imageProcessing.js';
+import { loadOpenCV, readRaster, detectContours } from './utils/imageProcessing.js';
 import { importSVG } from './utils/svgImport.js';
 import { createGeometry } from './utils/geometry.js';
 
@@ -16,7 +16,14 @@ export default function App() {
   const [threshold,setThreshold]=useState(130),[invert,setInvert]=useState(true),[minArea,setMinArea]=useState(80);
   const [showImage,setShowImage]=useState(true), [scale,setScale]=useState(1), [thickness,setThickness]=useState(5);
   const [cv,setCv]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
-  useEffect(()=>{let live=true;waitForOpenCV().then(x=>{if(live)setCv(x)}).catch(()=>{});return ()=>{live=false;};},[]);
+  useEffect(() => {
+    if (svgMode || !raster || cv) return;
+    let live = true;
+    setError('Laddar bildanalysbiblioteket …');
+    loadOpenCV().then(x => { if (live) { setCv(x); setError(''); } })
+      .catch(err => { if (live) setError(err.message); });
+    return () => { live = false; };
+  }, [raster, svgMode, cv]);
   async function importFile(file) {
     setBusy(true);setError('');
     try {
@@ -46,7 +53,7 @@ export default function App() {
   useEffect(()=>()=>{geometry?.dispose();},[geometry]);
   return <div className="app">
     <header><div><p className="eyebrow">MAKERSPACE · 2,5D</p><h1>Bild till 3D</h1><p>Från bild till utskrivbar modell – direkt i webbläsaren.</p></div>
-    <div className="status">{cv?'Bildanalys redo':'Laddar OpenCV …'}</div></header>
+    <div className="status">{cv ? 'Bildanalys redo' : raster && !svgMode ? 'Laddar OpenCV …' : 'Redo för import'}</div></header>
     <nav className="steps" aria-label="Arbetssteg">{STEPS.map((name,i)=><button key={name} className={step===i?'active':''} onClick={()=>setStep(i)} disabled={i>0&&!fileName}>{i+1}. {name}</button>)}</nav>
     {fileName&&<div className="filebar">Fil: <strong>{fileName}</strong> <button onClick={()=>setStep(0)}>Byt bild</button></div>}
     {error&&<div className="notice" role="status">{error}</div>}
