@@ -35,7 +35,7 @@ export function startAnalysis(onStatus) {
   });
   return readyPromise;
 }
-export async function findContoursAsync(canvas,threshold,invert,minArea) {
+export async function findContoursAsync(canvas,threshold,minArea) {
   if(!worker)throw new Error('Worker saknas.');
   const context=canvas.getContext('2d',{willReadFrequently:true});
   const image=context.getImageData(0,0,canvas.width,canvas.height);
@@ -43,7 +43,7 @@ export async function findContoursAsync(canvas,threshold,invert,minArea) {
   const id=++serial;
   return new Promise((resolve,reject)=>{
     pending.set(id,{resolve,reject});
-    worker.postMessage({type:'analyze',id,pixels,width:canvas.width,height:canvas.height,threshold,invert,minArea},[pixels]);
+    worker.postMessage({type:'analyze',id,pixels,width:canvas.width,height:canvas.height,threshold,minArea},[pixels]);
   });
 }
 export function stopAnalysis(){
