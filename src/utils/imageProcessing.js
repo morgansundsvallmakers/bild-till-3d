@@ -1,15 +1,30 @@
-// OpenCV.js laddas separat från CDN och är inte ett React-beroende.
-export async function waitForOpenCV(timeout = 20000) {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    const cv = window.cv;
-    if (cv && typeof cv.then === 'function') {
-      try { await cv; } catch { /* försök igen */ }
-    }
-    if (cv && typeof cv.Mat === 'function' && typeof cv.findContours === 'function') return cv;
-    await new Promise(resolve => setTimeout(resolve, 150));
-  }
-  throw new Error('OpenCV kunde inte laddas. Kontrollera internetanslutningen och försök igen.');
+// OpenCV laddas endast om en rasterbild väljs.
+let cvLoadPromise;
+export function loadOpenCV() {
+  if (cvLoadPromise) return cvLoadPromise;
+  cvLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://docs.opencv.org/4.x/opencv.js';
+    script.async = true;
+    const timeout = setTimeout(() => reject(new Error('OpenCV svarade inte inom 30 sekunder.')), 30000);
+    script.onerror = () => { clearTimeout(timeout); reject(new Error('OpenCV kunde inte hämtas.')); };
+    script.onload = async () => {
+      try {
+        let cv = window.cv;
+        if (cv && typeof cv.then === 'function') {
+          cv = await Promise.race([
+            cv,
+            new Promise((_, rej) => setTimeout(() => rej(new Error('OpenCV kunde inte starta.')), 20000))
+          ]);
+        }
+        if (!cv || typeof cv.Mat !== 'function') throw new Error('OpenCV saknar förväntade funktioner.');
+        clearTimeout(timeout);
+        resolve(cv);
+      } catch (err) { clearTimeout(timeout); reject(err); }
+    };
+    document.head.appendChild(script);
+  }).catch(err => { cvLoadPromise = null; throw err; });
+  return cvLoadPromise;
 }
 export async function readRaster(file) {
   const objectUrl = URL.createObjectURL(file);
