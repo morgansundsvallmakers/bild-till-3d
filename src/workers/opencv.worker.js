@@ -29,35 +29,6 @@ function pointInPolygon(p, poly) {
   }
   return inside;
 }
-function distanceToSegment(p, a, b) {
-  const dx = b.x - a.x, dy = b.y - a.y;
-  const l2 = dx * dx + dy * dy;
-  if (!l2) return Math.hypot(p.x - a.x, p.y - a.y);
-  let u = ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2;
-  u = Math.max(0, Math.min(1, u));
-  return Math.hypot(p.x - (a.x + u * dx), p.y - (a.y + u * dy));
-}
-function rdp(points, epsilon) {
-  if (epsilon <= 0 || points.length < 4) return points;
-  const open = [...points, points[0]];
-  function rec(list) {
-    if (list.length <= 2) return list;
-    let max = -1, idx = -1;
-    for (let i = 1; i < list.length - 1; i++) {
-      const d = distanceToSegment(list[i], list[0], list[list.length - 1]);
-      if (d > max) { max = d; idx = i; }
-    }
-    if (max > epsilon) {
-      const left = rec(list.slice(0, idx + 1));
-      const right = rec(list.slice(idx));
-      return [...left.slice(0, -1), ...right];
-    }
-    return [list[0], list[list.length - 1]];
-  }
-  const out = rec(open);
-  out.pop();
-  return out.length >= 3 ? out : points;
-}
 function stitch(segments) {
   const adjacency = new Map();
   const pointByKey = new Map();
@@ -144,12 +115,10 @@ function marchingSquares(data, width, height, threshold, invert) {
   }
   return stitch(segments);
 }
-function buildCandidates(loops, minArea, smoothing) {
-  const epsilon = smoothing === 'smooth' ? 0.7 : smoothing === 'light' ? 0.25 : 0;
-  const items = loops.map((points,id) => {
-    const simplified = rdp(points, epsilon);
-    return { id, points: simplified, area: Math.abs(area(simplified)) };
-  }).filter(x => x.points.length >= 3 && x.area >= minArea)
+function buildCandidates(loops, minArea) {
+  const items = loops.map((points,id) => ({
+    id, points, area: Math.abs(area(points))
+  })).filter(x => x.points.length >= 3 && x.area >= minArea)
     .sort((a,b)=>b.area-a.area);
 
   for (const item of items) {
@@ -163,10 +132,10 @@ function buildCandidates(loops, minArea, smoothing) {
   }
   return outers.map(({id,points,area,holes})=>({id,points,area,holes})).slice(0,30);
 }
-function analyse({ id, pixels, width, height, threshold, invert, minArea, smoothing='light' }) {
+function analyse({ id, pixels, width, height, threshold, invert, minArea }) {
   const data = new Uint8ClampedArray(pixels);
   const loops = marchingSquares(data,width,height,threshold,invert);
-  const candidates = buildCandidates(loops,minArea,smoothing);
+  const candidates = buildCandidates(loops,minArea);
   self.postMessage({ type:'result', id, candidates });
 }
 self.onmessage = event => {
