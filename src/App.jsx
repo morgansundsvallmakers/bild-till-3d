@@ -28,7 +28,12 @@ export default function App() {
   async function importFile(file) {
     setBusy(true);setError('');
     try {
-      if (/\.svg$/i.test(file.name) || file.type==='image/svg+xml') {
+      const isSvg = /\.svg$/i.test(file.name) || file.type==='image/svg+xml';
+      const maxBytes = isSvg ? 5 * 1024 * 1024 : 25 * 1024 * 1024;
+      if (file.size > maxBytes) {
+        throw new Error(isSvg ? 'SVG-filen är för stor. Max 5 MB.' : 'Bildfilen är för stor. Max 25 MB.');
+      }
+      if (isSvg) {
         const result=await importSVG(file);
         setSvgMode(true);setRaster(null);setSvgCandidates(result.candidates);setCandidates(result.candidates);
         setScale(result.suggestedScale);setChosen(0);
