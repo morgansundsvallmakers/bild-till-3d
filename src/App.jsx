@@ -16,12 +16,15 @@ export default function App() {
   const [threshold,setThreshold]=useState(130),[invert,setInvert]=useState(true),[minArea,setMinArea]=useState(80);
   const [showImage,setShowImage]=useState(true), [scale,setScale]=useState(1), [thickness,setThickness]=useState(5);
   const [cv,setCv]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [diagnostics,setDiagnostics]=useState([]);
+  const logStatus = message => setDiagnostics(lines => [...lines.slice(-19), message]);
   useEffect(() => {
     if (svgMode || !raster || cv) return;
     let live = true;
-    setError('Laddar bildanalysbiblioteket …');
-    loadOpenCV().then(x => { if (live) { setCv(x); setError(''); } })
-      .catch(err => { if (live) setError(err.message); });
+    setDiagnostics(['Förbereder bildanalysen']);
+    loadOpenCV(message => { if (live) logStatus(message); })
+      .then(x => { if (live) { setCv(() => x); setError(''); } })
+      .catch(err => { if (live) setError('OpenCV: ' + (err.message || String(err))); });
     return () => { live = false; };
   }, [raster, svgMode, cv]);
   async function importFile(file) {
@@ -43,7 +46,7 @@ export default function App() {
   useEffect(()=>{
     if(svgMode){setCandidates(svgCandidates);return;}
     if(!raster)return;
-    if(!cv){setError('OpenCV laddas fortfarande. Kontrollerar anslutningen …');return;}
+    if(!cv) return;
     try {const found=detectContours(cv,raster.canvas,threshold,invert,minArea);
       setCandidates(found);setChosen(0);setError(found.length?'':'Inga konturer hittades. Prova invertering eller ett annat tröskelvärde.');
     } catch(e){setError('Bildanalysen misslyckades: '+e.message);}
@@ -57,6 +60,7 @@ export default function App() {
     <nav className="steps" aria-label="Arbetssteg">{STEPS.map((name,i)=><button key={name} className={step===i?'active':''} onClick={()=>setStep(i)} disabled={i>0&&!fileName}>{i+1}. {name}</button>)}</nav>
     {fileName&&<div className="filebar">Fil: <strong>{fileName}</strong> <button onClick={()=>setStep(0)}>Byt bild</button></div>}
     {error&&<div className="notice" role="status">{error}</div>}
+    {raster && !svgMode && <details className="panel" open={!cv}><summary>Diagnostik för OpenCV {cv ? '(redo)' : '(pågår)'}</summary><ol aria-live="polite">{diagnostics.map((line,i)=><li key={i}>{line}</li>)}</ol></details>}
     {step===0&&<ImageUpload onFile={importFile} busy={busy}/>}
     {step===1&&<ContourEditor raster={raster} candidates={candidates} chosen={chosen} onChoose={setChosen}
       threshold={threshold} setThreshold={setThreshold} invert={invert} setInvert={setInvert}
