@@ -69,9 +69,9 @@ function stitch(segments) {
   return loops;
 }
 
-function marchingSquares(data, width, height, threshold, invert) {
+function marchingSquares(data, width, height, threshold) {
   const segments = [];
-  const inside = v => invert ? v < threshold : v >= threshold;
+  const inside = v => v >= threshold;
   for (let y = 0; y < height - 1; y++) {
     for (let x = 0; x < width - 1; x++) {
       const v0 = grayAt(data,width,x,y);
@@ -132,9 +132,9 @@ function buildCandidates(loops, minArea) {
   }
   return outers.map(({id,points,area,holes})=>({id,points,area,holes})).slice(0,30);
 }
-function analyse({ id, pixels, width, height, threshold, invert, minArea }) {
+function analyse({ id, pixels, width, height, threshold, minArea }) {
   const data = new Uint8ClampedArray(pixels);
-  const loops = marchingSquares(data,width,height,threshold,invert);
+  const loops = marchingSquares(data,width,height,threshold);
   const candidates = buildCandidates(loops,minArea);
   self.postMessage({ type:'result', id, candidates });
 }
