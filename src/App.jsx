@@ -4,7 +4,8 @@ import ContourEditor from './components/ContourEditor.jsx';
 import Calibration from './components/Calibration.jsx';
 import ModelViewer from './components/ModelViewer.jsx';
 import ExportPanel from './components/ExportPanel.jsx';
-import { loadOpenCV, readRaster, detectContours } from './utils/imageProcessing.js';
+import { readRaster } from './utils/imageProcessing.js';
+import { startAnalysis, findContoursAsync, stopAnalysis } from './utils/workerAnalysis.js';
 import { importSVG } from './utils/svgImport.js';
 import { createGeometry } from './utils/geometry.js';
 
@@ -15,18 +16,18 @@ export default function App() {
   const [candidates,setCandidates]=useState([]), [chosen,setChosen]=useState(0);
   const [threshold,setThreshold]=useState(130),[invert,setInvert]=useState(true),[minArea,setMinArea]=useState(80);
   const [showImage,setShowImage]=useState(true), [scale,setScale]=useState(1), [thickness,setThickness]=useState(5);
-  const [cv,setCv]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [analysisReady,setAnalysisReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [diagnostics,setDiagnostics]=useState([]);
   const logStatus = message => setDiagnostics(lines => [...lines.slice(-19), message]);
   useEffect(() => {
-    if (svgMode || !raster || cv) return;
+    if (svgMode || !raster || analysisReady) return;
     let live = true;
-    setDiagnostics(['Förbereder bildanalysen']);
-    loadOpenCV(message => { if (live) logStatus(message); })
-      .then(x => { if (live) { setCv(() => x); setError(''); } })
+    setDiagnostics(['Förbereder analys i separat Worker']);
+    startAnalysis(message => { if (live) logStatus(message); })
+      .then(() => { if (live) { setAnalysisReady(true); setError(''); } })
       .catch(err => { if (live) setError('OpenCV: ' + (err.message || String(err))); });
     return () => { live = false; };
-  }, [raster, svgMode, cv]);
+  }, [raster, svgMode, analysisReady]);
   async function importFile(file) {
     setBusy(true);setError('');
     try {
@@ -43,24 +44,30 @@ export default function App() {
     } catch(err){setError(err.message||String(err));}
     finally{setBusy(false);}
   }
-  useEffect(()=>{
-    if(svgMode){setCandidates(svgCandidates);return;}
-    if(!raster)return;
-    if(!cv) return;
-    try {const found=detectContours(cv,raster.canvas,threshold,invert,minArea);
-      setCandidates(found);setChosen(0);setError(found.length?'':'Inga konturer hittades. Prova invertering eller ett annat tröskelvärde.');
-    } catch(e){setError('Bildanalysen misslyckades: '+e.message);}
-  },[raster,svgMode,svgCandidates,cv,threshold,invert,minArea]);
+  useEffect(() => {
+    if (svgMode) { setCandidates(svgCandidates); return; }
+    if (!raster || !analysisReady) return;
+    let active=true;
+    findContoursAsync(raster.canvas,threshold,invert,minArea)
+      .then(found => {
+        if (!active) return;
+        setCandidates(found);
+        setChosen(0);
+        setError(found.length ? '' : 'Inga konturer hittades. Prova ett annat tröskelvärde eller invertering.');
+      })
+      .catch(err => { if(active)setError('Bildanalysen misslyckades: '+err.message); });
+    return ()=>{active=false;};
+  },[raster,svgMode,svgCandidates,analysisReady,threshold,invert,minArea]);
   const candidate=candidates[chosen]||null;
   const geometry=useMemo(()=>{if(!candidate)return null;try{return createGeometry(candidate,scale,thickness);}catch{return null;}},[candidate,scale,thickness]);
   useEffect(()=>()=>{geometry?.dispose();},[geometry]);
   return <div className="app">
     <header><div><p className="eyebrow">MAKERSPACE · 2,5D</p><h1>Bild till 3D</h1><p>Från bild till utskrivbar modell – direkt i webbläsaren.</p></div>
-    <div className="status">{cv ? 'Bildanalys redo' : raster && !svgMode ? 'Laddar OpenCV …' : 'Redo för import'}</div></header>
+    <div className="status">{analysisReady ? 'Bildanalys redo' : raster && !svgMode ? 'Laddar OpenCV …' : 'Redo för import'}</div></header>
     <nav className="steps" aria-label="Arbetssteg">{STEPS.map((name,i)=><button key={name} className={step===i?'active':''} onClick={()=>setStep(i)} disabled={i>0&&!fileName}>{i+1}. {name}</button>)}</nav>
     {fileName&&<div className="filebar">Fil: <strong>{fileName}</strong> <button onClick={()=>setStep(0)}>Byt bild</button></div>}
     {error&&<div className="notice" role="status">{error}</div>}
-    {raster && !svgMode && <details className="panel" open={!cv}><summary>Diagnostik för OpenCV {cv ? '(redo)' : '(pågår)'}</summary><ol aria-live="polite">{diagnostics.map((line,i)=><li key={i}>{line}</li>)}</ol></details>}
+    {raster && !svgMode && <details className="panel" open={!analysisReady}><summary>Diagnostik för OpenCV {analysisReady ? '(redo)' : '(pågår)'}</summary><ol aria-live="polite">{diagnostics.map((line,i)=><li key={i}>{line}</li>)}</ol></details>}
     {step===0&&<ImageUpload onFile={importFile} busy={busy}/>}
     {step===1&&<ContourEditor raster={raster} candidates={candidates} chosen={chosen} onChoose={setChosen}
       threshold={threshold} setThreshold={setThreshold} invert={invert} setInvert={setInvert}
