@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { createModelMesh } from './texturedMesh.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { bounds, getSize } from './geometry.js';
 
@@ -21,4 +23,15 @@ export function exportSVG(candidate, scale) {
   const d = [path(candidate.points), ...(candidate.holes || []).map(path)].join(' ');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size.width.toFixed(3)}mm" height="${size.height.toFixed(3)}mm" viewBox="0 0 ${size.width.toFixed(4)} ${size.height.toFixed(4)}"><path d="${d}" fill="black" fill-rule="evenodd"/></svg>`;
   download(svg, 'bild-till-3d.svg', 'image/svg+xml');
+}
+
+export async function exportGLB(geometry, candidate, scale, raster, sideColor) {
+  const model = createModelMesh(geometry, candidate, scale, raster, sideColor);
+  try {
+    // glTF uses meters and Y-up, whereas the existing STL geometry uses mm and Z-up.
+    model.mesh.scale.setScalar(0.001);
+    model.mesh.rotation.x = -Math.PI / 2;
+    const binary = await new GLTFExporter().parseAsync(model.mesh, {binary:true});
+    download(binary, 'bild-till-3d.glb', 'model/gltf-binary');
+  } finally { model.dispose(); }
 }

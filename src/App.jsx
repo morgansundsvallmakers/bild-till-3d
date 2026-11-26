@@ -16,6 +16,7 @@ export default function App() {
   const [candidates,setCandidates]=useState([]), [chosen,setChosen]=useState(0);
   const [threshold,setThreshold]=useState(130),[minArea,setMinArea]=useState(80);
   const [showImage,setShowImage]=useState(true), [scale,setScale]=useState(1), [thickness,setThickness]=useState(5);
+  const [useTexture,setUseTexture]=useState(true), [sideColor,setSideColor]=useState('#808080');
   const [analysisReady,setAnalysisReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
   useEffect(() => {
     if (svgMode || !raster || analysisReady) return;
@@ -75,7 +76,8 @@ export default function App() {
     {step===2&&<Calibration candidate={candidate} scale={scale} setScale={setScale}/>}
     {step===3&&<><section className="panel"><h2>Modellens tjocklek</h2>
       <label className="inline-label">Tjocklek i mm <input type="number" min="0.01" step="0.5" value={thickness} onChange={e=>setThickness(Number(e.target.value))}/></label></section>
-      <ModelViewer geometry={geometry}/><ExportPanel candidate={candidate} geometry={geometry} scale={scale}/></>}
+      <section className="panel"><label className="inline-label"><input type="checkbox" checked={useTexture && !!raster} disabled={!raster} onChange={e=>setUseTexture(e.target.checked)}/> Använd originalbild som textur</label>{useTexture && raster && <label className="inline-label">Kant- och undersidesfärg <input type="color" value={sideColor} onChange={e=>setSideColor(e.target.value)}/></label>}</section>
+      <ModelViewer geometry={geometry} raster={useTexture?raster:null} candidate={candidate} scale={scale} sideColor={sideColor}/><ExportPanel candidate={candidate} geometry={geometry} scale={scale} raster={useTexture?raster:null} sideColor={sideColor}/></>}
     {fileName&&<footer className="row navfoot"><button disabled={step===0} onClick={()=>setStep(s=>Math.max(0,s-1))}>Föregående</button>
       {step<3?<button className="primary" onClick={()=>setStep(s=>Math.min(3,s+1))}>Nästa: {STEPS[step+1]}</button>:
       <span className="hint">Kontrollera alltid storleken i din slicer.</span>}</footer>}

@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import { createModelMesh } from '../utils/texturedMesh.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-export default function ModelViewer({ geometry }) {
+export default function ModelViewer({ geometry, raster, candidate, scale, sideColor }) {
   const host = useRef(null);
   useEffect(() => {
     if (!geometry || !host.current) return;
@@ -11,8 +12,8 @@ export default function ModelViewer({ geometry }) {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     renderer.setSize(width, height); node.appendChild(renderer.domElement);
-    const material = new THREE.MeshStandardMaterial({ color: '#7de0d0', metalness: 0.12, roughness: 0.5, side: THREE.DoubleSide });
-    const mesh = new THREE.Mesh(geometry, material); scene.add(mesh);
+    const model = createModelMesh(geometry, candidate, scale, raster, sideColor);
+    const mesh = model.mesh; scene.add(mesh);
     const box = new THREE.Box3().setFromObject(mesh), center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
     mesh.position.sub(center);
     const largest = Math.max(size.x,size.y,size.z,1);
@@ -26,8 +27,8 @@ export default function ModelViewer({ geometry }) {
     draw();
     const observer=new ResizeObserver(()=>{if(!node.isConnected)return; const w=node.clientWidth||600;camera.aspect=w/360;camera.updateProjectionMatrix();renderer.setSize(w,360);});
     observer.observe(node);
-    return ()=>{stopped=true;cancelAnimationFrame(frame);observer.disconnect();controls.dispose();renderer.dispose();material.dispose();renderer.domElement.remove();};
-  },[geometry]);
+    return ()=>{stopped=true;cancelAnimationFrame(frame);observer.disconnect();controls.dispose();renderer.dispose();model.dispose();renderer.domElement.remove();};
+  },[geometry,raster,candidate,scale,sideColor]);
   return <section className="panel"><h2>4. 3D-modell</h2><p>Dra för att rotera och använd mushjulet eller två fingrar för att zooma.</p>
     <div className="viewer" ref={host}>{!geometry && <p>Välj en kontur för att se modellen.</p>}</div></section>;
 }
